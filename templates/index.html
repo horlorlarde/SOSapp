@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 text-center">
+        <h1 class="display-4 mt-5">
+            <i class="bi bi-shield-fill-exclamation text-danger"></i> 
+            SOS Emergency Response System
+        </h1>
+        <p class="lead">
+            A local-first emergency response platform for immediate help
+        </p>
+        
+        {% if not current_user.is_authenticated %}
+        <div class="card mt-5">
+            <div class="card-body">
+                <h5 class="card-title">Get Started</h5>
+                <p class="card-text">
+                    Register as a user to send SOS alerts or as an authority to receive and respond to emergencies.
+                </p>
+                <a href="{{ url_for('auth.register') }}" class="btn btn-primary">
+                    <i class="bi bi-person-plus"></i> Register
+                </a>
+                <a href="{{ url_for('auth.login') }}" class="btn btn-outline-primary">
+                    <i class="bi bi-box-arrow-in-right"></i> Login
+                </a>
+            </div>
+        </div>
+        {% else %}
+        <div class="card mt-5">
+            <div class="card-body">
+                <h5 class="card-title">Welcome Back, {{ current_user.display_name }}!</h5>
+                <p class="card-text">
+                    You are logged in as a {{ current_user.role }}.
+                </p>
+                {% if current_user.role == 'user' %}
+                <a href="{{ url_for('user.dashboard') }}" class="btn btn-primary">
+                    <i class="bi bi-speedometer2"></i> Go to User Dashboard
+                </a>
+                {% elif current_user.role == 'authority' %}
+                <a href="{{ url_for('authority.dashboard') }}" class="btn btn-primary">
+                    <i class="bi bi-speedometer2"></i> Go to Authority Dashboard
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+        
+        <div class="row mt-5">
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">
+                            <i class="bi bi-person-fill text-primary"></i> User
+                        </h5>
+                        <p class="card-text">
+                            Send emergency SOS alerts with your location and live video stream.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">
+                            <i class="bi bi-shield-fill-check text-success"></i> Authority
+                        </h5>
+                        <p class="card-text">
+                            Receive real-time alerts and respond to emergencies in your area.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">
+                            <i class="bi bi-lightning-charge-fill text-warning"></i> Real-time
+                        </h5>
+                        <p class="card-text">
+                            Instant communication between users and authorities with live video.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>

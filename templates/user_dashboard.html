@@ -1,0 +1,468 @@
+{% extends "base.html" %}
+
+{% block extra_css %}
+<style>
+    .sos-button {
+        width: 200px;
+        height: 200px;
+        border-radius: 50%;
+        background: radial-gradient(circle, #ff6b6b, #ff0000);
+        color: white;
+        border: none;
+        font-size: 24px;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 8px 16px rgba(255, 0, 0, 0.3);
+        transition: all 0.2s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .sos-button:hover {
+        transform: scale(1.05);
+        box-shadow: 0 12px 20px rgba(255, 0, 0, 0.4);
+    }
+    
+    .sos-button:active {
+        transform: scale(0.95);
+    }
+    
+    .sos-button.active {
+        animation: pulse 1s infinite;
+        background: radial-gradient(circle, #ff4d4d, #cc0000);
+    }
+    
+    .sos-button.stopped {
+        background: radial-gradient(circle, #6c757d, #495057);
+    }
+    
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
+        70% { box-shadow: 0 0 0 15px rgba(255, 0, 0, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+    }
+    
+    .video-container {
+        width: 100%;
+        max-width: 640px;
+        margin: 0 auto;
+    }
+    
+    #videoFeed {
+        width: 100%;
+        height: auto;
+        border: 2px solid #dee2e6;
+        border-radius: 8px;
+    }
+    
+    .coordinates-display {
+        font-family: monospace;
+        font-size: 18px;
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-radius: 5px;
+        border: 1px solid #dee2e6;
+    }
+    
+    .status-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 5px;
+    }
+    
+    .status-active {
+        background-color: #28a745;
+    }
+    
+    .status-inactive {
+        background-color: #6c757d;
+    }
+    
+    .sms-log {
+        max-height: 200px;
+        overflow-y: auto;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12 text-center">
+        <h2>
+            <i class="bi bi-person-fill"></i> User Dashboard
+        </h2>
+        <p class="text-muted">Send emergency alerts with your location and live video</p>
+    </div>
+</div>
+
+<div class="row justify-content-center mt-4">
+    <div class="col-12 text-center mb-4">
+        <button id="sosButton" class="sos-button">
+            SOS
+        </button>
+        <div class="mt-3">
+            <button id="stopButton" class="btn btn-secondary" style="display: none;">
+                <i class="bi bi-stop-circle"></i> Stop SOS
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-camera-video"></i> Live Video Feed
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="video-container">
+                    <video id="videoFeed" autoplay playsinline></video>
+                </div>
+                <div class="mt-2 text-center">
+                    <span id="cameraStatus" class="badge bg-secondary">
+                        <span class="status-indicator status-inactive"></span>
+                        Camera Inactive
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-geo-alt"></i> Location
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="coordinatesDisplay" class="coordinates-display text-center">
+                    No location data
+                </div>
+                <div class="mt-2 text-center">
+                    <span id="locationStatus" class="badge bg-secondary">
+                        <span class="status-indicator status-inactive"></span>
+                        Location Inactive
+                    </span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-chat-dots"></i> SMS Simulation
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="smsLog" class="sms-log">
+                    <div class="text-muted text-center">
+                        SMS logs will appear here
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-info-circle"></i> Emergency Contacts
+                </h5>
+            </div>
+            <div class="card-body">
+                <ul id="emergencyContactsList" class="list-group">
+                    <!-- Emergency contacts will be populated here -->
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+    // DOM Elements
+    const sosButton = document.getElementById('sosButton');
+    const stopButton = document.getElementById('stopButton');
+    const videoFeed = document.getElementById('videoFeed');
+    const coordinatesDisplay = document.getElementById('coordinatesDisplay');
+    const cameraStatus = document.getElementById('cameraStatus');
+    const locationStatus = document.getElementById('locationStatus');
+    const smsLog = document.getElementById('smsLog');
+    const emergencyContactsList = document.getElementById('emergencyContactsList');
+    
+    // State variables
+    let socket;
+    let stream = null;
+    let currentIncidentId = null;
+    let isStreaming = false;
+    let captureInterval = null;
+    let frameSequence = 0;
+    
+    // Emergency contacts (simulated)
+    const emergencyContacts = [
+        {name: "Emergency Contact 1", phone: "+1234567890"},
+        {name: "Emergency Contact 2", phone: "+1234567891"}
+    ];
+    
+    // Initialize emergency contacts list
+    function initEmergencyContacts() {
+        emergencyContactsList.innerHTML = '';
+        emergencyContacts.forEach(contact => {
+            const li = document.createElement('li');
+            li.className = 'list-group-item d-flex justify-content-between align-items-center';
+            li.innerHTML = `
+                <div>
+                    <strong>${contact.name}</strong>
+                    <br>
+                    <small class="text-muted">${contact.phone}</small>
+                </div>
+                <span class="badge bg-primary rounded-pill">
+                    <i class="bi bi-person-lines-fill"></i>
+                </span>
+            `;
+            emergencyContactsList.appendChild(li);
+        });
+    }
+    
+    // Initialize SocketIO connection
+    function initSocket() {
+        socket = io();
+        
+        socket.on('connect', function() {
+            console.log('Connected to server');
+        });
+        
+        socket.on('user:ack', function(data) {
+            console.log('Received acknowledgment:', data);
+            if (data.incident_id) {
+                currentIncidentId = data.incident_id;
+            }
+        });
+        
+        socket.on('sms:simulated', function(data) {
+            console.log('SMS simulated:', data);
+            addSmsLogEntry(data.contact, data.message, data.status);
+        });
+        
+        socket.on('disconnect', function() {
+            console.log('Disconnected from server');
+        });
+    }
+    
+    // Add entry to SMS log
+    function addSmsLogEntry(contact, message, status) {
+        const logEntry = document.createElement('div');
+        logEntry.className = 'alert alert-info alert-sm';
+        logEntry.innerHTML = `
+            <div class="d-flex justify-content-between">
+                <strong>${contact}</strong>
+                <small>${new Date().toLocaleTimeString()}</small>
+            </div>
+            <p class="mb-1">${message}</p>
+            <small class="text-muted">Status: ${status}</small>
+        `;
+        
+        // Clear the placeholder if it's the first entry
+        if (smsLog.querySelector('.text-muted')) {
+            smsLog.innerHTML = '';
+        }
+        
+        smsLog.prepend(logEntry);
+    }
+    
+    // Get user media (camera access)
+    async function getCameraAccess() {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { width: { ideal: 640 }, height: { ideal: 480 } }, 
+                audio: false 
+            });
+            videoFeed.srcObject = stream;
+            cameraStatus.innerHTML = '<span class="status-indicator status-active"></span> Camera Active';
+            cameraStatus.className = 'badge bg-success';
+            return true;
+        } catch (err) {
+            console.error('Error accessing camera:', err);
+            alert('Could not access camera. Please ensure you have granted camera permissions.');
+            cameraStatus.innerHTML = '<span class="status-indicator status-inactive"></span> Camera Access Denied';
+            cameraStatus.className = 'badge bg-danger';
+            return false;
+        }
+    }
+    
+    // Get geolocation
+    function getLocation() {
+        if (!navigator.geolocation) {
+            alert('Geolocation is not supported by your browser');
+            return;
+        }
+        
+        navigator.geolocation.getCurrentPosition(
+            function(position) {
+                const coords = {
+                    lat: position.coords.latitude,
+                    lon: position.coords.longitude
+                };
+                coordinatesDisplay.textContent = `Lat: ${coords.lat.toFixed(6)}, Lon: ${coords.lon.toFixed(6)}`;
+                locationStatus.innerHTML = '<span class="status-indicator status-active"></span> Location Active';
+                locationStatus.className = 'badge bg-success';
+                return coords;
+            },
+            function(error) {
+                console.error('Error getting location:', error);
+                coordinatesDisplay.textContent = 'Location unavailable';
+                locationStatus.innerHTML = '<span class="status-indicator status-inactive"></span> Location Error';
+                locationStatus.className = 'badge bg-danger';
+                return null;
+            }
+        );
+    }
+    
+    // Start video streaming
+    function startStreaming() {
+        if (!stream) return;
+        
+        isStreaming = true;
+        frameSequence = 0;
+        
+        // Create canvas for capturing frames
+        const canvas = document.createElement('canvas');
+        const videoTrack = stream.getVideoTracks()[0];
+        const settings = videoTrack.getSettings();
+        canvas.width = settings.width;
+        canvas.height = settings.height;
+        const ctx = canvas.getContext('2d');
+        
+        // Capture frames at regular intervals
+        captureInterval = setInterval(() => {
+            if (!isStreaming) return;
+            
+            // Draw video frame to canvas
+            ctx.drawImage(videoFeed, 0, 0, canvas.width, canvas.height);
+            
+            // Convert to base64
+            const frameData = canvas.toDataURL('image/jpeg', 0.6);
+            
+            // Emit frame to server
+            if (socket && currentIncidentId) {
+                socket.emit('sos:frame', {
+                    incident_id: currentIncidentId,
+                    frame_base64_chunk: frameData.split(',')[1], // Remove data URL prefix
+                    seq: frameSequence++
+                });
+            }
+        }, 200); // Send frame every 200ms
+    }
+    
+    // Stop video streaming
+    function stopStreaming() {
+        isStreaming = false;
+        if (captureInterval) {
+            clearInterval(captureInterval);
+            captureInterval = null;
+        }
+        
+        // Emit end signal
+        if (socket && currentIncidentId) {
+            socket.emit('sos:end', {
+                incident_id: currentIncidentId
+            });
+        }
+        
+        // Stop camera stream
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+            videoFeed.srcObject = null;
+        }
+        
+        cameraStatus.innerHTML = '<span class="status-indicator status-inactive"></span> Camera Inactive';
+        cameraStatus.className = 'badge bg-secondary';
+        locationStatus.innerHTML = '<span class="status-indicator status-inactive"></span> Location Inactive';
+        locationStatus.className = 'badge bg-secondary';
+        coordinatesDisplay.textContent = 'No location data';
+    }
+    
+    // Initialize SOS functionality
+    function initSOS() {
+        sosButton.addEventListener('click', async function() {
+            if (sosButton.classList.contains('active')) return;
+            
+            // Get camera access
+            const cameraSuccess = await getCameraAccess();
+            if (!cameraSuccess) return;
+            
+            // Get location
+            const position = await new Promise((resolve) => {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => resolve(pos),
+                    (err) => {
+                        console.error('Location error:', err);
+                        resolve(null);
+                    }
+                );
+            });
+            
+            if (!position) {
+                alert('Could not get your location. Please ensure location services are enabled.');
+                stopStreaming();
+                return;
+            }
+            
+            const coords = {
+                lat: position.coords.latitude,
+                lon: position.coords.longitude
+            };
+            
+            coordinatesDisplay.textContent = `Lat: ${coords.lat.toFixed(6)}, Lon: ${coords.lon.toFixed(6)}`;
+            
+            // Emit SOS init event
+            if (socket) {
+                socket.emit('sos:init', {
+                    coords: coords,
+                    meta: {
+                        user_id: '{{ current_user.id }}',
+                        timestamp: new Date().toISOString()
+                    }
+                });
+            }
+            
+            // Update UI
+            sosButton.textContent = 'SOS ACTIVE';
+            sosButton.classList.add('active');
+            stopButton.style.display = 'inline-block';
+            
+            // Start streaming
+            startStreaming();
+        });
+        
+        stopButton.addEventListener('click', function() {
+            // Update UI
+            sosButton.textContent = 'SOS';
+            sosButton.classList.remove('active');
+            stopButton.style.display = 'none';
+            
+            // Stop streaming
+            stopStreaming();
+        });
+    }
+    
+    // Initialize when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        initEmergencyContacts();
+        initSocket();
+        initSOS();
+    });
+</script>
+{% endblock %}
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>

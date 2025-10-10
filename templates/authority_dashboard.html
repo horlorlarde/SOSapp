@@ -1,0 +1,414 @@
+{% extends "base.html" %}
+
+{% block extra_css %}
+<style>
+    .incident-card {
+        transition: all 0.3s ease;
+        cursor: pointer;
+        border-left: 4px solid #6c757d;
+    }
+    
+    .incident-card.active {
+        border-left: 4px solid #007bff;
+        background-color: #f8f9fa;
+    }
+    
+    .incident-card.active .incident-status {
+        background-color: #007bff;
+    }
+    
+    .incident-status {
+        display: inline-block;
+        padding: 0.25em 0.5em;
+        font-size: 75%;
+        font-weight: 700;
+        line-height: 1;
+        text-align: center;
+        white-space: nowrap;
+        vertical-align: baseline;
+        border-radius: 0.375rem;
+        background-color: #6c757d;
+        color: white;
+    }
+    
+    .video-container {
+        width: 100%;
+        max-width: 640px;
+        margin: 0 auto;
+    }
+    
+    #liveVideoFeed {
+        width: 100%;
+        height: auto;
+        border: 2px solid #dee2e6;
+        border-radius: 8px;
+        background-color: #000;
+    }
+    
+    .coordinates-display {
+        font-family: monospace;
+        font-size: 18px;
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-radius: 5px;
+        border: 1px solid #dee2e6;
+    }
+    
+    .sms-log {
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    
+    .frame-buffer {
+        display: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2>
+            <i class="bi bi-shield-fill-check"></i> Authority Dashboard
+        </h2>
+        <p class="text-muted">Monitor and respond to emergency alerts</p>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <!-- Incident List -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="bi bi-list"></i> Active Incidents
+                </h5>
+                <span class="badge bg-primary">{{ incidents|length }}</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="list-group list-group-flush" id="incidentList">
+                    {% if incidents %}
+                        {% for incident in incidents %}
+                        <div class="list-group-item incident-card" 
+                             data-incident-id="{{ incident.id }}"
+                             data-user-id="{{ incident.user_id }}">
+                            <div class="d-flex justify-content-between">
+                                <h6 class="mb-1">Incident #{{ incident.id }}</h6>
+                                <span class="incident-status">{{ incident.status|upper }}</span>
+                            </div>
+                            <small class="text-muted">
+                                User ID: {{ incident.user_id }} | 
+                                {{ incident.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
+                            </small>
+                            {% if incident.get_latest_coords() %}
+                            <div class="mt-1">
+                                <small>
+                                    <i class="bi bi-geo-alt"></i> 
+                                    {{ "%.6f"|format(incident.get_latest_coords().lat) }}, 
+                                    {{ "%.6f"|format(incident.get_latest_coords().lon) }}
+                                </small>
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                    <div class="list-group-item text-center text-muted">
+                        No active incidents
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Active Incident Viewer -->
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="bi bi-webcam"></i> Live Incident Viewer
+                </h5>
+                <button id="resolveButton" class="btn btn-success btn-sm" disabled>
+                    <i class="bi bi-check-circle"></i> Resolve Incident
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="noIncidentSelected" class="text-center py-5">
+                    <i class="bi bi-info-circle" style="font-size: 3rem; color: #6c757d;"></i>
+                    <h5 class="mt-3">No Incident Selected</h5>
+                    <p class="text-muted">Select an incident from the list to view details</p>
+                </div>
+                
+                <div id="incidentViewer" style="display: none;">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="video-container">
+                                <img id="liveVideoFeed" alt="Live video feed">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-geo-alt"></i> Location
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div id="coordinatesDisplay" class="coordinates-display text-center">
+                                        No location data
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="card mt-3">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-clock"></i> Incident Timeline
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div id="incidentTimeline">
+                                        <small class="text-muted">No timeline data</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-chat-dots"></i> SMS Simulation Log
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div id="smsLog" class="sms-log">
+                                        <div class="text-muted text-center">
+                                            SMS logs will appear here
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden frame buffer for video reconstruction -->
+<div class="frame-buffer" id="frameBuffer"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+    // DOM Elements
+    const incidentList = document.getElementById('incidentList');
+    const noIncidentSelected = document.getElementById('noIncidentSelected');
+    const incidentViewer = document.getElementById('incidentViewer');
+    const liveVideoFeed = document.getElementById('liveVideoFeed');
+    const coordinatesDisplay = document.getElementById('coordinatesDisplay');
+    const incidentTimeline = document.getElementById('incidentTimeline');
+    const smsLog = document.getElementById('smsLog');
+    const resolveButton = document.getElementById('resolveButton');
+    
+    // State variables
+    let socket;
+    let activeIncidentId = null;
+    let frameBuffer = [];
+    let frameDisplayInterval = null;
+    
+    // Initialize SocketIO connection
+    function initSocket() {
+        socket = io();
+        
+        socket.on('connect', function() {
+            console.log('Connected to server as authority');
+        });
+        
+        // New incident notification
+        socket.on('authority:new_incident', function(data) {
+            console.log('New incident received:', data);
+            addNewIncidentToList(data);
+        });
+        
+        // Video frame from user
+        socket.on('authority:frame', function(data) {
+            if (data.incident_id == activeIncidentId) {
+                displayFrame(data.frame_base64_chunk);
+            }
+        });
+        
+        // Coordinate update from user
+        socket.on('authority:update_coords', function(data) {
+            if (data.incident_id == activeIncidentId) {
+                updateCoordinatesDisplay(data.coords);
+            }
+        });
+        
+        // SMS simulation notification
+        socket.on('sms:simulated', function(data) {
+            if (data.incident_id == activeIncidentId) {
+                addSmsLogEntry(data.contact, data.message, data.status);
+            }
+        });
+        
+        // Incident resolved notification
+        socket.on('authority:incident_resolved', function(data) {
+            if (data.incident_id == activeIncidentId) {
+                markIncidentAsResolved(data.incident_id);
+            }
+        });
+        
+        socket.on('disconnect', function() {
+            console.log('Disconnected from server');
+        });
+    }
+    
+    // Add new incident to the list
+    function addNewIncidentToList(incidentData) {
+        // Check if incident already exists
+        const existingIncident = document.querySelector(`[data-incident-id="${incidentData.incident_id}"]`);
+        if (existingIncident) return;
+        
+        const incidentCard = document.createElement('div');
+        incidentCard.className = 'list-group-item incident-card';
+        incidentCard.setAttribute('data-incident-id', incidentData.incident_id);
+        incidentCard.setAttribute('data-user-id', incidentData.user_id);
+        incidentCard.innerHTML = `
+            <div class="d-flex justify-content-between">
+                <h6 class="mb-1">Incident #${incidentData.incident_id}</h6>
+                <span class="incident-status">ACTIVE</span>
+            </div>
+            <small class="text-muted">
+                User ID: ${incidentData.user_id} | 
+                ${new Date(incidentData.timestamp).toLocaleString()}
+            </small>
+            <div class="mt-1">
+                <small>
+                    <i class="bi bi-geo-alt"></i> 
+                    ${incidentData.coords.lat.toFixed(6)}, 
+                    ${incidentData.coords.lon.toFixed(6)}
+                </small>
+            </div>
+        `;
+        
+        // Add click event
+        incidentCard.addEventListener('click', function() {
+            selectIncident(incidentData.incident_id);
+        });
+        
+        // Add to top of list
+        incidentList.prepend(incidentCard);
+    }
+    
+    // Select an incident to view
+    function selectIncident(incidentId) {
+        // Update UI selection
+        document.querySelectorAll('.incident-card').forEach(card => {
+            card.classList.remove('active');
+        });
+        
+        const selectedCard = document.querySelector(`[data-incident-id="${incidentId}"]`);
+        if (selectedCard) {
+            selectedCard.classList.add('active');
+        }
+        
+        // Show incident viewer
+        noIncidentSelected.style.display = 'none';
+        incidentViewer.style.display = 'block';
+        resolveButton.disabled = false;
+        activeIncidentId = incidentId;
+        
+        // Reset display
+        liveVideoFeed.src = '';
+        coordinatesDisplay.textContent = 'No location data';
+        smsLog.innerHTML = '<div class="text-muted text-center">SMS logs will appear here</div>';
+        
+        // TODO: Fetch incident details from server (in a real implementation)
+        console.log('Selected incident:', incidentId);
+    }
+    
+    // Display a video frame
+    function displayFrame(frameData) {
+        liveVideoFeed.src = 'data:image/jpeg;base64,' + frameData;
+    }
+    
+    // Update coordinates display
+    function updateCoordinatesDisplay(coords) {
+        coordinatesDisplay.textContent = `Lat: ${coords.lat.toFixed(6)}, Lon: ${coords.lon.toFixed(6)}`;
+    }
+    
+    // Add entry to SMS log
+    function addSmsLogEntry(contact, message, status) {
+        const logEntry = document.createElement('div');
+        logEntry.className = 'alert alert-info alert-sm';
+        logEntry.innerHTML = `
+            <div class="d-flex justify-content-between">
+                <strong>${contact}</strong>
+                <small>${new Date().toLocaleTimeString()}</small>
+            </div>
+            <p class="mb-1">${message}</p>
+            <small class="text-muted">Status: ${status}</small>
+        `;
+        
+        // Clear the placeholder if it's the first entry
+        if (smsLog.querySelector('.text-muted')) {
+            smsLog.innerHTML = '';
+        }
+        
+        smsLog.prepend(logEntry);
+    }
+    
+    // Mark incident as resolved
+    function markIncidentAsResolved(incidentId) {
+        const incidentCard = document.querySelector(`[data-incident-id="${incidentId}"]`);
+        if (incidentCard) {
+            const statusBadge = incidentCard.querySelector('.incident-status');
+            if (statusBadge) {
+                statusBadge.textContent = 'RESOLVED';
+                statusBadge.style.backgroundColor = '#28a745';
+            }
+        }
+        
+        // Disable resolve button
+        resolveButton.disabled = true;
+        
+        // Show notification
+        alert(`Incident #${incidentId} has been resolved.`);
+    }
+    
+    // Initialize event listeners
+    function initEventListeners() {
+        // Resolve button
+        resolveButton.addEventListener('click', function() {
+            if (!activeIncidentId) return;
+            
+            if (confirm('Are you sure you want to resolve this incident?')) {
+                // In a real implementation, this would send a request to the server
+                // For this simulation, we'll just update the UI
+                markIncidentAsResolved(activeIncidentId);
+            }
+        });
+        
+        // Incident card clicks
+        document.querySelectorAll('.incident-card').forEach(card => {
+            card.addEventListener('click', function() {
+                const incidentId = this.getAttribute('data-incident-id');
+                selectIncident(incidentId);
+            });
+        });
+    }
+    
+    // Initialize when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        initSocket();
+        initEventListeners();
+    });
+</script>
+{% endblock %}
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>
