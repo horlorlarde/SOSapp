@@ -1,0 +1,1 @@
+A local-first Flask application implementing an SOS emergency response system with real-time video streaming, geolocation tracking, and an authority dashboard.
